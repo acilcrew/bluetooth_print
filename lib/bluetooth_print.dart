@@ -125,6 +125,17 @@ class BluetoothPrint {
     _isScanning.add(false);
   }
 
+  /// Returns devices already paired at the OS (Android) level, e.g. classic
+  /// Bluetooth SPP printers that never show up in the BLE [scan]/[startScan]
+  /// results because they don't advertise over BLE.
+  Future<List<BluetoothDevice>> getPairedDevices() async {
+    final List<dynamic> list =
+        await _channel.invokeMethod('getPairedDevices') ?? [];
+    return list
+        .map((m) => BluetoothDevice.fromJson(Map<String, dynamic>.from(m)))
+        .toList();
+  }
+
   Future<dynamic> connect(BluetoothDevice device) =>
       _channel.invokeMethod('connect', device.toJson());
 

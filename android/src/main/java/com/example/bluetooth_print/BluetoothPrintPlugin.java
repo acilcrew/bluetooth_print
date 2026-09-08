@@ -185,6 +185,18 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
         stopScan();
         result.success(null);
         break;
+      case "getPairedDevices":
+      {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+          ActivityCompat.requestPermissions(activityBinding.getActivity(), PERMISSIONS_LOCATION, REQUEST_FINE_LOCATION_PERMISSIONS);
+          pendingCall = call;
+          pendingResult = result;
+          break;
+        }
+
+        getDevices(result);
+        break;
+      }
       case "connect":
         connect(call, result);
         break;
@@ -210,16 +222,20 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
   }
 
   private void getDevices(Result result){
-    List<Map<String, Object>> devices = new ArrayList<>();
-    for (BluetoothDevice device : mBluetoothAdapter.getBondedDevices()) {
-      Map<String, Object> ret = new HashMap<>();
-      ret.put("address", device.getAddress());
-      ret.put("name", device.getName());
-      ret.put("type", device.getType());
-      devices.add(ret);
-    }
+    try {
+      List<Map<String, Object>> devices = new ArrayList<>();
+      for (BluetoothDevice device : mBluetoothAdapter.getBondedDevices()) {
+        Map<String, Object> ret = new HashMap<>();
+        ret.put("address", device.getAddress());
+        ret.put("name", device.getName());
+        ret.put("type", device.getType());
+        devices.add(ret);
+      }
 
-    result.success(devices);
+      result.success(devices);
+    } catch (SecurityException e) {
+      result.error("no_permissions", "this plugin requires bluetooth connect permission", null);
+    }
   }
 
   /**
@@ -430,12 +446,17 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
   public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
 
     if (requestCode == REQUEST_FINE_LOCATION_PERMISSIONS) {
-      if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-        startScan(pendingCall, pendingResult);
+      if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (pendingCall != null && "getPairedDevices".equals(pendingCall.method)) {
+          getDevices(pendingResult);
+        } else {
+          startScan(pendingCall, pendingResult);
+        }
       } else {
-        pendingResult.error("no_permissions", "this plugin requires location permissions for scanning", null);
-        pendingResult = null;
+        pendingResult.error("no_permissions", "this plugin requires location/bluetooth permissions", null);
       }
+      pendingCall = null;
+      pendingResult = null;
       return true;
     }
     return false;
