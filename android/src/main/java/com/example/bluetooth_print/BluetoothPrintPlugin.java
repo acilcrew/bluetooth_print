@@ -167,7 +167,14 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
         result.success(mBluetoothAdapter.isEnabled());
         break;
       case "isConnected":
-        result.success(threadPool != null);
+        // Real socket state. This used to be `threadPool != null`, which is
+        // set on connect()/print() and only cleared by a receiver that exists
+        // while the Dart state stream is being listened to — so a printer that
+        // slept or powered off still reported "connected".
+        result.success(isPortOpen());
+        break;
+      case "isReady":
+        result.success(isPortOpen() && isPrinterCommandKnown());
         break;
       case "startScan":
       {
@@ -219,6 +226,17 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
         break;
     }
 
+  }
+
+  private boolean isPortOpen() {
+    DeviceConnFactoryManager m = DeviceConnFactoryManager.getDeviceConnFactoryManagers().get(curMacAddress);
+    return m != null && m.mPort != null && m.getConnState();
+  }
+
+  /** The printer replies to the ESC/TSC/CPCL probe a moment after the port opens; printing before that is silently dropped. */
+  private boolean isPrinterCommandKnown() {
+    DeviceConnFactoryManager m = DeviceConnFactoryManager.getDeviceConnFactoryManagers().get(curMacAddress);
+    return m != null && m.getCurrentPrinterCommand() != null;
   }
 
   private void getDevices(Result result){
@@ -411,14 +429,20 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
     Map<String, Object> args = call.arguments();
 
     final DeviceConnFactoryManager deviceConnFactoryManager = DeviceConnFactoryManager.getDeviceConnFactoryManagers().get(curMacAddress);
-    if (deviceConnFactoryManager == null || !deviceConnFactoryManager.getConnState()) {
+    if (!isPortOpen()) {
       result.error("not connect", "state not right", null);
+      return;
+    }
+    if (!isPrinterCommandKnown()) {
+      result.error("not_ready", "printer command type not detected yet", null);
+      return;
     }
 
     if (args != null && args.containsKey("config") && args.containsKey("data")) {
       final Map<String,Object> config = (Map<String,Object>)args.get("config");
       final List<Map<String,Object>> list = (List<Map<String,Object>>)args.get("data");
       if(list == null){
+        result.error("please add config or data", "", null);
         return;
       }
 
@@ -438,6 +462,7 @@ public class BluetoothPrintPlugin implements FlutterPlugin, ActivityAware, Metho
           }
         }
       });
+      result.success(true);
     }else{
       result.error("please add config or data", "", null);
     }

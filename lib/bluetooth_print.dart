@@ -38,6 +38,11 @@ class BluetoothPrint {
   Future<bool?> get isConnected async =>
       await _channel.invokeMethod('isConnected');
 
+  /// True only when the socket is open AND the printer has answered the
+  /// command-type probe — i.e. a print sent now is actually accepted.
+  Future<bool> get isReady async =>
+      (await _channel.invokeMethod('isReady')) ?? false;
+
   BehaviorSubject<bool> _isScanning = BehaviorSubject.seeded(false);
 
   Stream<bool> get isScanning => _isScanning.stream;
@@ -151,8 +156,20 @@ class BluetoothPrint {
       return m.toJson();
     }).toList();
 
-    _channel.invokeMethod('printReceipt', args);
-    return Future.value(true);
+    return _invokePrint('printReceipt', args);
+  }
+
+  /// Resolves true once the job was handed to the printer, false if the
+  /// plugin refused it (not connected / printer not ready). Never throws, so
+  /// existing callers that ignore the result keep working.
+  Future<bool> _invokePrint(String method, Map<String, Object> args) async {
+    try {
+      await _channel.invokeMethod(method, args);
+      return true;
+    } on PlatformException catch (e) {
+      print('BluetoothPrint $method failed: ${e.code} ${e.message}');
+      return false;
+    }
   }
 
   Future<dynamic> printLabel(Map<String, dynamic> config, List<LineText> data) {
@@ -162,8 +179,7 @@ class BluetoothPrint {
       return m.toJson();
     }).toList();
 
-    _channel.invokeMethod('printLabel', args);
-    return Future.value(true);
+    return _invokePrint('printLabel', args);
   }
 
   Future<dynamic> printTest() => _channel.invokeMethod('printTest');
